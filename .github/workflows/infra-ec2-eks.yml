@@ -1,0 +1,161 @@
+name: Terraform Deploy commonservices
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - qa
+          - stage
+          - prod
+      application:
+        description: 'Application'
+        required: true
+        default: 'commonservices'
+        type: choice
+        options:
+          - commonservices    
+      vpcEnabled:
+        description: 'Plan VPC'
+        required: true
+        default: 'false'
+        type: boolean
+      eksEnabled:
+        description: 'Plan EKS'
+        required: true
+        default: 'false'
+        type: boolean
+      ec2Enabled:
+        description: 'Plan EC2'
+        required: true
+        default: 'false'
+        type: boolean
+      ecrEnabled:
+        description: 'Plan ECR'
+        required: true
+        default: 'false'
+        type: boolean        
+      remoteProvisionerEnabled:
+        description: 'Plan RemoteProvisioner'
+        required: true
+        default: 'false'
+        type: boolean          
+      terraformApply:
+        description: 'Apply Terraform changes after Plan'
+        required: true
+        default: 'false'
+        type: boolean             
+env:
+  ENVIRONMENT: ${{ github.event.inputs.environment }}
+  APPLICATION: ${{ github.event.inputs.application }}
+  VPC_PLAN: ${{ github.event.inputs.vpcEnabled }} 
+  EKS_PLAN: ${{ github.event.inputs.eksEnabled }} 
+  EC2_PLAN: ${{ github.event.inputs.ec2Enabled }} 
+  ECR_PLAN: ${{ github.event.inputs.ecrEnabled }} 
+  REMOTEPROVISIONER_PLAN: ${{ github.event.inputs.remoteProvisionerEnabled }}   
+  TERRAFORM_APPLY: ${{ github.event.inputs.terraformApply }}  
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_version: 1.7.2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1  # Adjust as necessary for your region
+
+    - name: Set environment variables
+      run: |
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> $GITHUB_ENV
+        echo "APPLICATION=${{ env.APPLICATION }}" >> $GITHUB_ENV
+        echo "VPC_APPLY=${{ env.TERRAFORM_APPLY == 'true' && env.VPC_PLAN == 'true' }}" >> $GITHUB_ENV
+        echo "EKS_APPLY=${{ env.TERRAFORM_APPLY == 'true' && env.EKS_PLAN == 'true' }}" >> $GITHUB_ENV
+        echo "EC2_APPLY=${{ env.TERRAFORM_APPLY == 'true' && env.EC2_PLAN == 'true' }}" >> $GITHUB_ENV
+        echo "ECR_APPLY=${{ env.TERRAFORM_APPLY == 'true' && env.ECR_PLAN == 'true' }}" >> $GITHUB_ENV
+        echo "REMOTEPROVISIONER_APPLY=${{ env.TERRAFORM_APPLY == 'true' && env.REMOTEPROVISIONER_PLAN == 'true' }}" >> $GITHUB_ENV        
+        
+    - name: Create .tfvars file commonservices
+      if: env.APPLICATION == 'commonservices'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}
+      run: |
+        cat <<EOF > runtime-variables.tfvars
+        aws_access_key_id = "${{ secrets.AWS_ACCESS_KEY_ID }}"
+        aws_secret_access_key = "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+        github_username = "${{ secrets.GITHB_USERNAME }}"
+        github_password = "${{ secrets.GITHB_TOKEN }}"
+        EOF
+        
+    - name: Initialize and plan Terraform VPC
+      if: env.VPC_PLAN == 'true'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/vpc
+      run: |
+        terraform init
+        terraform plan -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars"
+        
+    - name: Initialize and plan Terraform EKS
+      if: env.EKS_PLAN == 'true'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/eks
+      run: |
+        terraform init
+        terraform plan -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars"
+        
+    - name: Initialize and plan Terraform EC2
+      if: env.EC2_PLAN == 'true' 
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/ec2
+      run: |
+        terraform init
+        terraform plan -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars"
+        
+    - name: Initialize and plan Terraform ECR
+      if: env.ECR_PLAN == 'true' 
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/ecr
+      run: |
+        terraform init
+        terraform plan -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars"
+                
+    - name: Initialize and plan Terraform RemoteProvisioner
+      if: env.REMOTEPROVISIONER_PLAN == 'true'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/remoteprovisioner
+      run: |
+        terraform init
+        terraform plan -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars"
+
+    - name: Apply Terraform VPC
+      if: env.VPC_APPLY == 'true'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/vpc
+      run: terraform apply -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars" -auto-approve
+      
+    - name: Apply Terraform eks
+      if: env.EKS_APPLY == 'true'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/eks
+      run: terraform apply -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars" -auto-approve
+      
+#    - name: Apply Terraform ec2
+#      if: env.EC2_APPLY == 'true'
+#      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/ec2
+#      run: terraform apply -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars" -auto-approve
+
+    - name: Apply Terraform ecr
+      if: env.ECR_APPLY == 'true'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/ecr
+      run: terraform apply -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars" -auto-approve
+
+    - name: Apply Terraform remoteprovisioner
+      if: env.REMOTEPROVISIONER_APPLY == 'true'
+      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}/remoteprovisioner
+      run: terraform apply -var-file="../runtime-variables.tfvars" -var-file="../${{ env.ENVIRONMENT }}-terraform.tfvars" -auto-approve
