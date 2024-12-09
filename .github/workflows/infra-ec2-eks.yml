@@ -1,4 +1,4 @@
-name: Terraform Deploy commonservices
+name: Terraform Deploy infra
 
 on:
   workflow_dispatch:
@@ -91,7 +91,7 @@ jobs:
         
     - name: Create .tfvars file commonservices
       if: env.APPLICATION == 'commonservices'
-      working-directory: ./terraform_aws/applications/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}
+      working-directory: ./terraform-eks//model-call/${{ env.APPLICATION }}/environments/${{ env.ENVIRONMENT }}
       run: |
         cat <<EOF > runtime-variables.tfvars
         aws_access_key_id = "${{ secrets.AWS_ACCESS_KEY_ID }}"
